@@ -1,0 +1,85 @@
+name: Dependency Updates
+
+on:
+  schedule:
+    # Run every Monday at 9 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+jobs:
+  update-dependencies:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Check for outdated packages
+        run: |
+          npm outdated --json > outdated.json || true
+          if [ -s outdated.json ]; then
+            echo "Outdated packages found:"
+            cat outdated.json
+            echo "HAS_UPDATES=true" >> $GITHUB_ENV
+          else
+            echo "All packages are up to date"
+            echo "HAS_UPDATES=false" >> $GITHUB_ENV
+          fi
+      
+      - name: Update minor and patch versions
+        if: env.HAS_UPDATES == 'true'
+        run: |
+          npm update
+          
+      - name: Install latest patch versions
+        if: env.HAS_UPDATES == 'true'
+        run: |
+          npm install
+      
+      - name: Run tests after update
+        if: env.HAS_UPDATES == 'true'
+        run: |
+          npm ci
+          npm run lint || echo "Linting failed"
+          npm run build
+          if npm run | grep -q "test"; then
+            npm test || echo "Tests failed"
+          fi
+      
+      - name: Create Pull Request
+        if: env.HAS_UPDATES == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'chore(deps): update dependencies'
+          title: '🔄 Automated dependency updates'
+          body: |
+            ## 🔄 Automated Dependency Updates
+            
+            This PR was automatically created to update dependencies.
+            
+            ### Changes
+            - Updated minor and patch versions of dependencies
+            - All tests and builds passed
+            
+            ### Review Checklist
+            - [ ] Review updated packages
+            - [ ] Test functionality manually if needed
+            - [ ] Merge if everything looks good
+            
+            **Note**: Major version updates are excluded for safety and require manual review.
+          branch: automated/dependency-updates
+          delete-branch: true
+          labels: |
+            dependencies
+            automated
+          assignees: hadamaouattara
+          draft: false

@@ -1,0 +1,113 @@
+name: Code Quality Checks
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  code-quality:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run ESLint
+        run: |
+          npm run lint -- --format=@microsoft/eslint-formatter-sarif --output-file=eslint-results.sarif
+        continue-on-error: true
+      
+      - name: Upload ESLint results to GitHub
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: eslint-results.sarif
+          wait-for-processing: true
+      
+      - name: Run Prettier check
+        run: |
+          if [ -f ".prettierrc" ] || [ -f "prettier.config.js" ]; then
+            npx prettier --check .
+          else
+            echo "Prettier configuration not found, skipping..."
+          fi
+      
+      - name: Check for console.log statements
+        run: |
+          echo "Checking for console.log statements..."
+          if grep -r "console\.log" --include="*.js" --include="*.jsx" --include="*.ts" --include="*.tsx" app/ components/ || true; then
+            echo "⚠️ Console.log statements found in code"
+            echo "Consider removing them before production"
+          else
+            echo "✅ No console.log statements found"
+          fi
+      
+      - name: Check bundle size
+        run: |
+          npm run build
+          echo "📦 Build size analysis:"
+          du -sh .next/ || du -sh out/ || echo "Build output not found"
+          
+          # Check if build output is reasonable (adjust threshold as needed)
+          if [ -d ".next" ]; then
+            size=$(du -s .next | cut -f1)
+            if [ $size -gt 50000 ]; then
+              echo "⚠️ Large build size detected: ${size}KB"
+              echo "Consider optimizing bundle size"
+            else
+              echo "✅ Build size looks good: ${size}KB"
+            fi
+          fi
+      
+      - name: Analyze dependencies
+        run: |
+          echo "📊 Dependency analysis:"
+          npm ls --depth=0 || true
+          
+          echo "🔍 Checking for unused dependencies:"
+          if command -v npx &> /dev/null; then
+            npx depcheck || echo "Depcheck not available, skipping unused dependency check"
+          fi
+      
+      - name: Generate code quality report
+        run: |
+          echo "# Code Quality Report" > code-quality-report.md
+          echo "" >> code-quality-report.md
+          echo "Generated on: $(date)" >> code-quality-report.md
+          echo "Commit: ${{ github.sha }}" >> code-quality-report.md
+          echo "" >> code-quality-report.md
+          
+          if [ -f "eslint-results.sarif" ]; then
+            echo "## ESLint Results" >> code-quality-report.md
+            echo "ESLint analysis completed. Check the Security tab for detailed results." >> code-quality-report.md
+            echo "" >> code-quality-report.md
+          fi
+          
+          echo "## Build Information" >> code-quality-report.md
+          if [ -d ".next" ]; then
+            echo "- Build output: .next/ ($(du -sh .next | cut -f1))" >> code-quality-report.md
+          elif [ -d "out" ]; then
+            echo "- Build output: out/ ($(du -sh out | cut -f1))" >> code-quality-report.md
+          fi
+          echo "- Node.js version: $(node --version)" >> code-quality-report.md
+          echo "- npm version: $(npm --version)" >> code-quality-report.md
+      
+      - name: Upload code quality report
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-quality-report
+          path: code-quality-report.md
+          retention-days: 30
