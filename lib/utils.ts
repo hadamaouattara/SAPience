@@ -1,19 +1,32 @@
-import { type ClassValue, clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-import { format, formatDistanceToNow } from 'date-fns';
+import { clsx, type ClassValue } from 'clsx';
 
-// Utility function for merging Tailwind classes
+// Utility function for merging classes (simplified without tailwind-merge)
 export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
+  return clsx(inputs);
 }
 
 // Date formatting utilities
 export function formatDate(date: string | Date, formatStr = 'MMM dd, yyyy') {
-  return format(new Date(date), formatStr);
+  const d = new Date(date);
+  return d.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit'
+  });
 }
 
 export function formatRelativeTime(date: string | Date) {
-  return formatDistanceToNow(new Date(date), { addSuffix: true });
+  const now = new Date();
+  const then = new Date(date);
+  const diffMs = now.getTime() - then.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+  
+  if (diffMins < 1) return 'just now';
+  if (diffMins < 60) return `${diffMins} minutes ago`;
+  if (diffHours < 24) return `${diffHours} hours ago`;
+  return `${diffDays} days ago`;
 }
 
 // Number formatting utilities
