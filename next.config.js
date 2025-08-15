@@ -1,8 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    serverComponentsExternalPackages: ['@netlify/blobs']
-  },
+  // Moved from experimental.serverComponentsExternalPackages to serverExternalPackages
+  serverExternalPackages: ['@netlify/blobs'],
   
   // Image optimization
   images: {
