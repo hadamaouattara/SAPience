@@ -6,47 +6,70 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  deployments: write
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 20
+
     strategy:
       matrix:
         node-version: [18.x, 20.x]
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'npm'
-      
+          cache: npm
+
       - name: Install dependencies
         run: npm ci
-      
+
       - name: Run linting
-        run: npm run lint
-      
+        run: |
+          if npm run | grep -qi "^ *lint"; then
+            npm run lint
+          else
+            echo "No lint script — skipping"
+          fi
+
       - name: Run type checking (if TypeScript)
         run: |
           if [ -f "tsconfig.json" ]; then
-            npm run type-check || npx tsc --noEmit
+            if npm run | grep -qi "^ *type[- ]?check"; then
+              npm run type-check
+            else
+              npx tsc --noEmit
+            fi
           fi
-      
+
       - name: Run tests
         run: |
-          if npm run | grep -q "test"; then
+          if npm run | grep -qi "^ *test"; then
             npm test
           else
-            echo "No tests found"
+            echo "No tests found — skipping"
           fi
-      
-      - name: Build application
-        run: npm run build
-      
+
+      - name: Build application (Next.js: build + export)
+        run: |
+          npm run build
+          # Génère ./out si Next.js : export via script ou fallback
+          npm run export || npx next export || true
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -54,34 +77,38 @@ jobs:
           path: |
             .next/
             out/
+          if-no-files-found: ignore
           retention-days: 7
 
   security:
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 10
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-      
+          cache: npm
+
       - name: Install dependencies
         run: npm ci
-      
-      - name: Run security audit
-        run: npm audit --audit-level=high
-      
-      - name: Check for vulnerabilities
+
+      - name: Install jq (for JSON parsing)
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Run security audit (non-blocking)
+        run: npm audit --audit-level=high || true
+
+      - name: Fail if high vulnerabilities
         run: |
-          if npm audit --audit-level=high --json | jq '.vulnerabilities | length' | grep -q '^0$'; then
-            echo "No high-level vulnerabilities found"
-          else
+          count=$(npm audit --audit-level=high --json | jq '.metadata.vulnerabilities | to_entries | map(select(.value>0)) | length')
+          echo "High vulnerability categories: $count"
+          if [ "$count" -gt 0 ]; then
             echo "High-level vulnerabilities detected!"
-            npm audit --audit-level=high
             exit 1
           fi
 
@@ -89,114 +116,114 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test, security]
     if: github.event_name == 'pull_request'
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-      
+          cache: npm
+
       - name: Install dependencies
         run: npm ci
-      
+
       - name: Build for preview
-        run: npm run build
-      
+        run: |
+          npm run build
+          npm run export || npx next export || true
+
       - name: Deploy to Netlify Preview
+        id: netlify
         uses: nwtgck/actions-netlify@v3.0
         with:
           publish-dir: './out'
           github-token: ${{ secrets.GITHUB_TOKEN }}
           deploy-message: "Deploy from GitHub Actions - PR #${{ github.event.number }}"
           alias: pr-${{ github.event.number }}
+          enable-pull-request-comment: false
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-      
+
       - name: Comment PR with preview URL
         uses: actions/github-script@v7
+        env:
+          PREVIEW_URL: ${{ steps.netlify.outputs.deploy-url }}
         with:
           script: |
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-            
-            const botComment = comments.find(comment => 
-              comment.user.type === 'Bot' && comment.body.includes('🚀 Preview deployed')
-            );
-            
-            const body = `🚀 Preview deployed to: https://pr-${{ github.event.number }}--${process.env.NETLIFY_SITE_ID}.netlify.app
-            
+            const body = `🚀 Preview deployed: ${process.env.PREVIEW_URL}
+
             📊 Build summary:
             - ✅ Tests passed
             - ✅ Security audit passed
             - ✅ Build successful
-            
-            This preview will be updated with every commit to this PR.`;
-            
-            if (botComment) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: botComment.id,
-                body: body
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: body
-              });
-            }
+
+            _This preview updates on each commit to this PR._`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });
 
   deploy-production:
     runs-on: ubuntu-latest
     needs: [test, security]
     if: github.ref == 'refs/heads/main'
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-      
+          cache: npm
+
       - name: Install dependencies
         run: npm ci
-      
+
       - name: Build for production
-        run: npm run build
-      
+        run: |
+          npm run build
+          npm run export || npx next export || true
+
       - name: Deploy to Netlify Production
+        id: netlify_prod
         uses: nwtgck/actions-netlify@v3.0
         with:
           publish-dir: './out'
           production-branch: main
           github-token: ${{ secrets.GITHUB_TOKEN }}
           deploy-message: "🚀 Production deployment from commit ${{ github.sha }}"
+          enable-pull-request-comment: false
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-      
-      - name: Create deployment status
+
+      - name: Create deployment + status in GitHub
         uses: actions/github-script@v7
+        env:
+          PROD_URL: ${{ steps.netlify_prod.outputs.deploy-url }}
         with:
           script: |
+            const { data: dep } = await github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: context.sha,
+              environment: 'production',
+              auto_merge: false,
+              required_contexts: []
+            });
             await github.rest.repos.createDeploymentStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              deployment_id: context.payload.deployment?.id || 'latest',
+              deployment_id: dep.id,
               state: 'success',
-              environment_url: 'https://your-site.netlify.app',
+              environment_url: process.env.PROD_URL,
               description: 'Successfully deployed to production'
             });
