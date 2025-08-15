@@ -1,8 +1,5 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Moved from experimental.serverComponentsExternalPackages to serverExternalPackages
-  serverExternalPackages: ['@netlify/blobs'],
-  
   // Image optimization
   images: {
     domains: ['localhost'],
@@ -41,16 +38,6 @@ const nextConfig = {
     ];
   },
   
-  // API routes configuration
-  async rewrites() {
-    return [
-      {
-        source: '/api/proxy/:path*',
-        destination: 'http://localhost:3001/api/:path*',
-      },
-    ];
-  },
-  
   // Performance optimizations
   webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
     // Custom webpack configuration
@@ -64,8 +51,10 @@ const nextConfig = {
     return config;
   },
   
-  // Output configuration for Netlify
-  output: 'standalone',
+  // Output configuration optimized for Netlify
+  output: 'export',
+  distDir: '.next',
+  trailingSlash: true,
   
   // Redirect configuration
   async redirects() {
