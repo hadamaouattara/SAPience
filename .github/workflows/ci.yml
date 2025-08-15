@@ -1,4 +1,4 @@
-name: CI/CD Pipeline - SAPience ML Platform
+name: CI/CD Pipeline
 
 on:
   push:
@@ -68,14 +68,13 @@ jobs:
         env:
           NODE_ENV: production
         run: |
-          echo "🚀 Building SAPience ML Platform v2.0..."
+          echo "🚀 Building SAPience ML Platform..."
           npm run build
-          echo "✅ Build completed successfully"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: sapience-build-${{ matrix.node-version }}
+          name: build-${{ matrix.node-version }}
           path: |
             .next/
             public/
@@ -110,10 +109,9 @@ jobs:
           count=$(npm audit --audit-level=high --json | jq '.metadata.vulnerabilities | to_entries | map(select(.value>0)) | length')
           echo "High vulnerability categories: $count"
           if [ "$count" -gt 0 ]; then
-            echo "❌ High-level vulnerabilities detected!"
+            echo "High-level vulnerabilities detected!"
             exit 1
           fi
-          echo "✅ Security audit passed"
 
   deploy-preview:
     runs-on: ubuntu-latest
@@ -134,59 +132,45 @@ jobs:
         run: npm ci
 
       - name: Build for preview
-        env:
-          NODE_ENV: production
-          NEXT_PUBLIC_PLATFORM_VERSION: "2.0.0-preview"
         run: |
-          echo "🌍 Building SAPience ML Platform preview..."
           npm run build
 
       - name: Deploy to Netlify Preview
         id: netlify
         uses: nwtgck/actions-netlify@v3.0
         with:
-          publish-dir: '.next'  # ✅ Corrigé pour App Router
+          publish-dir: '.next'
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          deploy-message: "SAPience ML Platform v2.0 - PR #${{ github.event.number }}: ${{ github.event.pull_request.title }}"
+          deploy-message: "SAPience ML Platform - PR #${{ github.event.number }}"
           alias: pr-${{ github.event.number }}
           enable-pull-request-comment: false
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
 
-      - name: Comment PR with SAPience preview URL
+      - name: Comment PR with preview URL
         uses: actions/github-script@v7
         env:
           PREVIEW_URL: ${{ steps.netlify.outputs.deploy-url }}
         with:
           script: |
-            const body = `## 🚀 SAPience ML Platform v2.0 - Preview Deployed!
+            const body = `🚀 **SAPience ML Platform Preview Deployed!**
             
-            **🌍 Preview URL:** ${process.env.PREVIEW_URL}
+            **Preview URL:** ${process.env.PREVIEW_URL}
 
-            ### 🎯 SAPience Features to Test:
-            - [📊 ML Dashboard Interactive](${process.env.PREVIEW_URL}/#demo)
+            ### 🎯 Test Features:
+            - [📊 ML Dashboard](${process.env.PREVIEW_URL}/#demo)
             - [🤖 PUP Predictions](${process.env.PREVIEW_URL}/#demo) 
-            - [⚙️ SAP/n8n Integrations](${process.env.PREVIEW_URL}/integrations)
-            - [🎬 Live Demo](${process.env.PREVIEW_URL}/demo)
-            - [💰 Enterprise Pricing](${process.env.PREVIEW_URL}/#pricing)
-
-            ### 📋 Test Checklist:
-            - [ ] 📱 Responsive design (mobile/desktop)
-            - [ ] 🎨 New visual identity (blue/cyan/slate)
-            - [ ] 📊 Interactive dashboard (4 tabs)
-            - [ ] 🏢 Enterprise B2B positioning
-            - [ ] ⚡ Performance & loading speed
-            - [ ] 🔗 Navigation between pages
+            - [⚙️ Integrations](${process.env.PREVIEW_URL}/integrations)
+            - [🎬 Demo](${process.env.PREVIEW_URL}/demo)
+            - [💰 Pricing](${process.env.PREVIEW_URL}/#pricing)
 
             ### 📊 Build Summary:
-            - ✅ Tests passed (Node.js ${{ matrix.node-version || '18.x, 20.x' }})
+            - ✅ Tests passed
             - ✅ Security audit passed
-            - ✅ SAPience ML Platform build successful
-            - ✅ All components loaded
+            - ✅ Build successful
 
-            _This preview updates automatically on each commit to this PR._
-            `;
+            _Updates automatically on each commit._`;
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -213,56 +197,41 @@ jobs:
         run: npm ci
 
       - name: Build for production
-        env:
-          NODE_ENV: production
-          NEXT_PUBLIC_PLATFORM_VERSION: "2.0.0"
         run: |
-          echo "🚀 Building SAPience ML Platform v2.0 for production..."
           npm run build
-          echo "✅ Production build completed"
 
       - name: Deploy to Netlify Production
         id: netlify_prod
         uses: nwtgck/actions-netlify@v3.0
         with:
-          publish-dir: '.next'  # ✅ Corrigé pour App Router
+          publish-dir: '.next'
           production-branch: main
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          deploy-message: "🚀 SAPience ML Platform v2.0 Production - ${{ github.sha }}"
+          deploy-message: "🚀 SAPience ML Platform Production - ${{ github.sha }}"
           enable-pull-request-comment: false
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
 
-      - name: Create deployment status in GitHub
+      - name: Create deployment + status in GitHub
         uses: actions/github-script@v7
         env:
           PROD_URL: ${{ steps.netlify_prod.outputs.deploy-url }}
         with:
           script: |
-            try {
-              const { data: deployment } = await github.rest.repos.createDeployment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                ref: context.sha,
-                environment: 'production',
-                description: 'SAPience ML Platform v2.0 Production Deployment',
-                auto_merge: false,
-                required_contexts: []
-              });
-              
-              await github.rest.repos.createDeploymentStatus({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                deployment_id: deployment.id,
-                state: 'success',
-                environment_url: process.env.PROD_URL,
-                description: '🚀 SAPience ML Platform v2.0 successfully deployed to production'
-              });
-              
-              console.log('✅ Production deployment successful');
-              console.log(`🌍 Live at: ${process.env.PROD_URL}`);
-            } catch (error) {
-              console.error('❌ Deployment status update failed:', error);
-              // Don't fail the workflow for this
-            }
+            const { data: dep } = await github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: context.sha,
+              environment: 'production',
+              auto_merge: false,
+              required_contexts: []
+            });
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: dep.id,
+              state: 'success',
+              environment_url: process.env.PROD_URL,
+              description: 'SAPience ML Platform successfully deployed'
+            });
