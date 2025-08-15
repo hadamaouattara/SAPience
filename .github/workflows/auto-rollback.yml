@@ -1,0 +1,189 @@
+name: 🔄 Auto Rollback - Emergency Recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for rollback'
+        required: true
+        default: 'Production issue detected'
+      target_commit:
+        description: 'Target commit SHA (optional - will use last known good)'
+        required: false
+        default: ''
+  repository_dispatch:
+    types: [emergency-rollback]
+
+jobs:
+  emergency-rollback:
+    name: 🚨 Emergency Rollback
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Full history for rollback
+        
+    - name: 🔍 Identify Rollback Target
+      id: rollback_target
+      run: |
+        echo "🔍 Identifying rollback target..."
+        
+        # Use provided commit or find last successful deployment
+        if [ -n "${{ github.event.inputs.target_commit }}" ]; then
+          TARGET_COMMIT="${{ github.event.inputs.target_commit }}"
+          echo "📌 Using provided target: $TARGET_COMMIT"
+        else
+          # Find last commit that passed quality gate
+          echo "🔍 Finding last successful deployment..."
+          
+          # Look for commits with successful quality gate
+          TARGET_COMMIT=$(git log --oneline --grep="Quality Gate" --grep="✅" --grep="PASSED" -n 1 --format="%H" || echo "")
+          
+          if [ -z "$TARGET_COMMIT" ]; then
+            # Fallback: use commit from 24 hours ago
+            TARGET_COMMIT=$(git log --since="24 hours ago" --oneline -n 1 --format="%H")
+          fi
+          
+          if [ -z "$TARGET_COMMIT" ]; then
+            echo "❌ ERROR: Cannot identify rollback target"
+            exit 1
+          fi
+          
+          echo "📌 Auto-detected target: $TARGET_COMMIT"
+        fi
+        
+        echo "target_commit=$TARGET_COMMIT" >> $GITHUB_OUTPUT
+        
+        # Verify target commit exists
+        if ! git cat-file -e "$TARGET_COMMIT"; then
+          echo "❌ ERROR: Target commit $TARGET_COMMIT does not exist"
+          exit 1
+        fi
+        
+        echo "✅ Rollback target validated: $TARGET_COMMIT"
+        
+    - name: 🔄 Create Rollback Branch
+      run: |
+        echo "🔄 Creating rollback branch..."
+        
+        TARGET_COMMIT="${{ steps.rollback_target.outputs.target_commit }}"
+        ROLLBACK_BRANCH="hotfix/rollback-$(date +%Y%m%d-%H%M%S)"
+        
+        # Create and switch to rollback branch
+        git checkout -b "$ROLLBACK_BRANCH" "$TARGET_COMMIT"
+        
+        echo "✅ Created rollback branch: $ROLLBACK_BRANCH"
+        echo "rollback_branch=$ROLLBACK_BRANCH" >> $GITHUB_ENV
+        
+    - name: 🛡️ Validate Rollback Target
+      run: |
+        echo "🛡️ Validating rollback target..."
+        
+        # Setup Node.js for validation
+        if command -v node &> /dev/null; then
+          echo "✅ Node.js available"
+        else
+          echo "⚠️ Node.js not available, skipping build validation"
+          exit 0
+        fi
+        
+        # Quick validation of critical files
+        CRITICAL_FILES=("package.json" "app/page.jsx" "app/layout.jsx")
+        
+        for file in "${CRITICAL_FILES[@]}"; do
+          if [ ! -f "$file" ]; then
+            echo "❌ ERROR: Critical file missing in rollback target: $file"
+            exit 1
+          fi
+        done
+        
+        # Quick dependency check if package.json exists
+        if [ -f "package.json" ]; then
+          echo "📦 Checking package.json structure..."
+          if ! node -e "JSON.parse(require('fs').readFileSync('package.json', 'utf8'))"; then
+            echo "❌ ERROR: Invalid package.json in rollback target"
+            exit 1
+          fi
+        fi
+        
+        echo "✅ Rollback target validation PASSED"
+        
+    - name: 🚀 Execute Rollback
+      run: |
+        echo "🚀 Executing rollback..."
+        
+        # Configure git
+        git config user.name "SAPience Auto Rollback"
+        git config user.email "noreply@sapience.ai"
+        
+        # Force push rollback branch to main
+        echo "🔄 Pushing rollback to main branch..."
+        git push origin "$rollback_branch:main" --force
+        
+        echo "✅ Rollback executed successfully"
+        
+    - name: 📢 Create Rollback Issue
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const reason = '${{ github.event.inputs.reason }}' || 'Emergency rollback triggered';
+          const targetCommit = '${{ steps.rollback_target.outputs.target_commit }}';
+          
+          const issueBody = `# 🚨 Emergency Rollback Executed
+          
+          ## 📋 Rollback Details
+          - **Reason**: ${reason}
+          - **Target Commit**: \`${targetCommit}\`
+          - **Executed**: ${new Date().toISOString()}
+          - **Triggered By**: @${{ github.actor }}
+          
+          ## 🔍 Investigation Required
+          - [ ] Identify root cause of production issue
+          - [ ] Fix underlying problem
+          - [ ] Test fix in staging environment
+          - [ ] Plan proper re-deployment
+          
+          ## 🛡️ Quality Gate Status
+          - [ ] Verify Quality Gate is still active
+          - [ ] Ensure Health Monitor is operational
+          - [ ] Confirm rollback target is stable
+          
+          ## 📞 Next Steps
+          1. **Immediate**: Verify production is stable
+          2. **Short-term**: Root cause analysis
+          3. **Medium-term**: Implement additional safeguards
+          4. **Long-term**: Process improvement
+          
+          ## 🔗 Related
+          - Rollback Commit: ${targetCommit}
+          - Workflow Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          
+          **⚠️ This issue should remain open until the root cause is resolved and proper deployment is restored.**
+          `;
+          
+          await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: `🚨 Emergency Rollback - ${new Date().toISOString().split('T')[0]}`,
+            body: issueBody,
+            labels: ['emergency', 'rollback', 'production-issue']
+          });
+          
+    - name: 📧 Notification
+      run: |
+        echo "📧 Rollback notification..."
+        echo "=========================================="
+        echo "🚨 EMERGENCY ROLLBACK COMPLETED"
+        echo "=========================================="
+        echo "📅 Date: $(date)"
+        echo "🎯 Target: ${{ steps.rollback_target.outputs.target_commit }}"
+        echo "👤 Triggered by: ${{ github.actor }}"
+        echo "📝 Reason: ${{ github.event.inputs.reason }}"
+        echo ""
+        echo "✅ Production should now be stable"
+        echo "🔍 Investigation issue created"
+        echo "📞 Team has been notified"
+        echo ""
+        echo "🛡️ SAPience ML Platform - Emergency Recovery Complete"

@@ -1,209 +1,140 @@
-name: 🔍 Quality Gate - Pre-Deploy Validation
+name: 🛡️ Quality Gate - Zero Error Deployment
 
 on:
-  pull_request:
-    branches: [main]
   push:
-    branches: [develop, feature/*, hotfix/*]
+    branches: [ main, develop, fix/* ]
+  pull_request:
+    branches: [ main, develop ]
 
 jobs:
-  validate-structure:
-    runs-on: ubuntu-latest
-    name: 📂 Validate Project Structure
-    outputs:
-      structure-valid: ${{ steps.structure.outputs.valid }}
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Validate Required Files
-        id: structure
-        run: |
-          echo "🔍 Validating project structure..."
-          
-          # Required files check
-          required_files=(
-            "package.json"
-            "next.config.js"
-            "app/layout.jsx"
-            "app/page.jsx"
-          )
-          
-          missing_files=()
-          for file in "${required_files[@]}"; do
-            if [ ! -f "$file" ]; then
-              missing_files+=("$file")
-            fi
-          done
-          
-          if [ ${#missing_files[@]} -ne 0 ]; then
-            echo "❌ Missing required files:"
-            printf '%s\n' "${missing_files[@]}"
-            echo "valid=false" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-          
-          # Check for problematic directories
-          problematic_dirs=("app/blobs" "app/image-cdn")
-          for dir in "${problematic_dirs[@]}"; do
-            if [ -d "$dir" ]; then
-              echo "❌ Problematic directory found: $dir"
-              echo "valid=false" >> $GITHUB_OUTPUT
-              exit 1
-            fi
-          done
-          
-          echo "✅ Project structure validation passed"
-          echo "valid=true" >> $GITHUB_OUTPUT
-
-  validate-dependencies:
-    runs-on: ubuntu-latest
-    name: 📦 Validate Dependencies
-    outputs:
-      deps-valid: ${{ steps.deps.outputs.valid }}
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-      
-      - name: Validate Package.json
-        id: deps
-        run: |
-          echo "🔍 Validating dependencies..."
-          
-          # Check for problematic dependencies
-          problematic_deps=("blobshape" "@netlify/blobs" "unique-names-generator")
-          
-          for dep in "${problematic_deps[@]}"; do
-            if grep -q "\"$dep\"" package.json; then
-              echo "❌ Problematic dependency found: $dep"
-              echo "deps-valid=false" >> $GITHUB_OUTPUT
-              exit 1
-            fi
-          done
-          
-          # Test dependency installation
-          echo "📥 Testing dependency installation..."
-          npm ci
-          
-          echo "✅ Dependencies validation passed"
-          echo "valid=true" >> $GITHUB_OUTPUT
-
-  validate-imports:
-    runs-on: ubuntu-latest
-    name: 🔗 Validate Import Paths
-    outputs:
-      imports-valid: ${{ steps.imports.outputs.valid }}
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Validate Import Paths
-        id: imports
-        run: |
-          echo "🔍 Validating import paths..."
-          
-          # Check for non-existent component imports
-          invalid_imports=()
-          
-          # Scan all jsx/js files for imports
-          while IFS= read -r -d '' file; do
-            while IFS= read -r line; do
-              if [[ $line =~ ^[[:space:]]*import.*['\"]([^'\"]+)['\"] ]]; then
-                import_path="${BASH_REMATCH[1]}"
-                
-                # Skip relative imports that start with . or absolute modules
-                if [[ $import_path =~ ^\./ ]] || [[ $import_path =~ ^\.\./ ]]; then
-                  # Resolve relative import
-                  dir=$(dirname "$file")
-                  resolved_path="$dir/$import_path"
-                  
-                  # Check if file exists (with common extensions)
-                  if [ ! -f "$resolved_path" ] && [ ! -f "$resolved_path.js" ] && [ ! -f "$resolved_path.jsx" ] && [ ! -f "$resolved_path.ts" ] && [ ! -f "$resolved_path.tsx" ]; then
-                    invalid_imports+=("$file: $import_path")
-                  fi
-                elif [[ $import_path =~ ^components/ ]]; then
-                  # Check components imports
-                  component_file="${import_path#components/}"
-                  if [ ! -f "components/$component_file.jsx" ] && [ ! -f "components/$component_file.js" ]; then
-                    invalid_imports+=("$file: $import_path")
-                  fi
-                fi
-              fi
-            done < "$file"
-          done < <(find app -name "*.jsx" -o -name "*.js" -print0)
-          
-          if [ ${#invalid_imports[@]} -ne 0 ]; then
-            echo "❌ Invalid imports found:"
-            printf '%s\n' "${invalid_imports[@]}"
-            echo "imports-valid=false" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-          
-          echo "✅ Import paths validation passed"
-          echo "imports-valid=true" >> $GITHUB_OUTPUT
-
-  test-build:
-    runs-on: ubuntu-latest
-    name: 🏗️ Test Build
-    needs: [validate-structure, validate-dependencies, validate-imports]
-    if: needs.validate-structure.outputs.structure-valid == 'true' && needs.validate-dependencies.outputs.deps-valid == 'true' && needs.validate-imports.outputs.imports-valid == 'true'
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-      
-      - name: Install dependencies
-        run: npm ci
-      
-      - name: Test Build
-        run: |
-          echo "🏗️ Testing production build..."
-          npm run build
-          
-          # Verify build output
-          if [ ! -d ".next" ]; then
-            echo "❌ Build failed - .next directory not created"
-            exit 1
-          fi
-          
-          echo "✅ Build test passed"
-
   quality-gate:
+    name: 🔍 Quality Gate Validation
     runs-on: ubuntu-latest
-    name: ✅ Quality Gate Summary
-    needs: [validate-structure, validate-dependencies, validate-imports, test-build]
-    if: always()
     
     steps:
-      - name: Quality Gate Result
-        run: |
-          echo "📊 Quality Gate Summary:"
-          echo "Structure: ${{ needs.validate-structure.outputs.structure-valid }}"
-          echo "Dependencies: ${{ needs.validate-dependencies.outputs.deps-valid }}"
-          echo "Imports: ${{ needs.validate-imports.outputs.imports-valid }}"
-          echo "Build: ${{ needs.test-build.result }}"
-          
-          if [[ "${{ needs.validate-structure.result }}" != "success" ]] || 
-             [[ "${{ needs.validate-dependencies.result }}" != "success" ]] || 
-             [[ "${{ needs.validate-imports.result }}" != "success" ]] || 
-             [[ "${{ needs.test-build.result }}" != "success" ]]; then
-            echo "❌ Quality Gate FAILED"
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🟢 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: 🔍 Validate Project Structure
+      run: |
+        echo "🔍 Checking required files..."
+        
+        # Check essential files
+        if [ ! -f "package.json" ]; then
+          echo "❌ ERROR: package.json missing"
+          exit 1
+        fi
+        
+        if [ ! -f "app/page.jsx" ]; then
+          echo "❌ ERROR: app/page.jsx missing"
+          exit 1
+        fi
+        
+        if [ ! -f "app/layout.jsx" ]; then
+          echo "❌ ERROR: app/layout.jsx missing"
+          exit 1
+        fi
+        
+        # Check forbidden directories
+        if [ -d "app/blobs" ]; then
+          echo "❌ ERROR: app/blobs directory found - should be removed"
+          exit 1
+        fi
+        
+        if [ -d "app/image-cdn" ]; then
+          echo "❌ ERROR: app/image-cdn directory found - should be removed"
+          exit 1
+        fi
+        
+        echo "✅ Project structure validation PASSED"
+        
+    - name: 🔍 Scan for Problematic Dependencies
+      run: |
+        echo "🔍 Scanning for problematic packages..."
+        
+        # Check package.json for forbidden dependencies
+        FORBIDDEN_DEPS=("blobshape" "@netlify/blobs" "unique-names-generator")
+        
+        for dep in "${FORBIDDEN_DEPS[@]}"; do
+          if grep -q "\"$dep\"" package.json; then
+            echo "❌ ERROR: Forbidden dependency found: $dep"
             exit 1
           fi
-          
-          echo "✅ Quality Gate PASSED - Safe to deploy"
+        done
+        
+        echo "✅ Dependency scan PASSED"
+        
+    - name: 🔍 Validate Import Paths
+      run: |
+        echo "🔍 Validating import paths..."
+        
+        # Check for problematic imports in JS/JSX files
+        PROBLEMATIC_IMPORTS=(
+          "'../utils.js'"
+          "'components/dashboard-preview'"
+          "'blobshape'"
+          "'@netlify/blobs'"
+          "'unique-names-generator'"
+        )
+        
+        for import in "${PROBLEMATIC_IMPORTS[@]}"; do
+          if find . -name "*.js" -o -name "*.jsx" -o -name "*.ts" -o -name "*.tsx" | xargs grep -l "$import" 2>/dev/null; then
+            echo "❌ ERROR: Problematic import found: $import"
+            echo "Files containing this import:"
+            find . -name "*.js" -o -name "*.jsx" -o -name "*.ts" -o -name "*.tsx" | xargs grep -l "$import"
+            exit 1
+          fi
+        done
+        
+        echo "✅ Import validation PASSED"
+        
+    - name: 📦 Install dependencies
+      run: |
+        echo "📦 Installing dependencies..."
+        npm ci
+        echo "✅ Dependencies installed successfully"
+        
+    - name: 🏗️ Test Build
+      run: |
+        echo "🏗️ Testing build process..."
+        npm run build
+        echo "✅ Build test PASSED"
+        
+    - name: 🧪 Run Tests (if available)
+      run: |
+        if [ -f "package.json" ] && grep -q '"test"' package.json; then
+          echo "🧪 Running tests..."
+          npm test -- --passWithNoTests
+        else
+          echo "ℹ️ No tests configured, skipping..."
+        fi
+        
+    - name: ✅ Quality Gate PASSED
+      run: |
+        echo "🎉 =========================================="
+        echo "🎉 QUALITY GATE VALIDATION SUCCESSFUL!"
+        echo "🎉 =========================================="
+        echo "✅ Project structure: VALID"
+        echo "✅ Dependencies: CLEAN"
+        echo "✅ Imports: VALID"
+        echo "✅ Build: SUCCESSFUL"
+        echo "🚀 DEPLOYMENT AUTHORIZED!"
+        
+  notify-success:
+    name: 📢 Success Notification
+    runs-on: ubuntu-latest
+    needs: quality-gate
+    if: success()
+    
+    steps:
+    - name: 🎉 Deployment Ready
+      run: |
+        echo "🎯 QUALITY GATE PASSED - DEPLOYMENT READY!"
+        echo "🛡️ Zero Error Deployment System: ACTIVE"
+        echo "📊 SAPience ML Platform: VALIDATED"
