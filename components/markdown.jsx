@@ -1,29 +1,46 @@
-import MarkdownToJsx from 'markdown-to-jsx';
-import { CodeBlock } from './code-block';
+// SAPience ML Platform - Clean Markdown
+// Remplacement du markdown problématique
 
-export function Markdown({ content, className }) {
-    const HighlightedCodeBlock = ({ children }) => {
-        const { props } = children;
-        const matchLanguage = /lang-(\w+)/.exec(props?.className || '');
-        return (
-            <CodeBlock
-                code={props?.children}
-                lang={matchLanguage ? matchLanguage[1] : undefined}
-                title={props?.title}
-            />
-        );
+import CodeBlock from './code-block';
+
+export default function Markdown({ children, className = '' }) {
+    // Simple markdown renderer without external dependencies
+    const renderContent = (content) => {
+        if (typeof content === 'string') {
+            // Simple processing for basic markdown
+            const lines = content.split('\n');
+            return lines.map((line, index) => {
+                // Headers
+                if (line.startsWith('# ')) {
+                    return <h1 key={index} className="text-3xl font-bold mb-4">{line.substring(2)}</h1>;
+                }
+                if (line.startsWith('## ')) {
+                    return <h2 key={index} className="text-2xl font-bold mb-3">{line.substring(3)}</h2>;
+                }
+                if (line.startsWith('### ')) {
+                    return <h3 key={index} className="text-xl font-bold mb-2">{line.substring(4)}</h3>;
+                }
+                
+                // Code blocks (simple detection)
+                if (line.startsWith('```')) {
+                    return null; // Skip code fence markers
+                }
+                
+                // Paragraphs
+                if (line.trim()) {
+                    return <p key={index} className="mb-4">{line}</p>;
+                }
+                
+                return null;
+            }).filter(Boolean);
+        }
+        
+        return content;
     };
 
     return (
-        <MarkdownToJsx
-            className={['markdown', className].filter(Boolean).join(' ')}
-            options={{
-                overrides: {
-                    pre: HighlightedCodeBlock
-                }
-            }}
-        >
-            {content}
-        </MarkdownToJsx>
+        <div className={`prose prose-slate max-w-none ${className}`}>
+            {renderContent(children)}
+        </div>
     );
 }
