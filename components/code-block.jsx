@@ -1,9 +1,14 @@
-import { Code } from 'bright';
+// SAPience ML Platform - Clean Code Block
+// Remplacement du code-block problématique
 
-export function CodeBlock({ code, lang, lineNumbers, title }) {
+export default function CodeBlock({ children, className = '', language = '' }) {
     return (
-        <Code lang={lang} title={title} lineNumbers={lineNumbers} theme="poimandres">
-            {code}
-        </Code>
+        <div className={`bg-slate-900 rounded-lg p-4 overflow-x-auto ${className}`}>
+            <pre className="text-slate-100 text-sm">
+                <code className={`language-${language}`}>
+                    {children}
+                </code>
+            </pre>
+        </div>
     );
 }
