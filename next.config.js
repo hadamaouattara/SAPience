@@ -51,11 +51,6 @@ const nextConfig = {
     return config;
   },
   
-  // Output configuration optimized for Netlify
-  output: 'export',
-  distDir: '.next',
-  trailingSlash: true,
-  
   // Redirect configuration
   async redirects() {
     return [
