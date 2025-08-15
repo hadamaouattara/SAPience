@@ -1,37 +1,19 @@
-import { uniqueNamesGenerator, adjectives, animals, NumberDictionary } from 'unique-names-generator';
+// SAPience ML Platform - Utils
+// Remplacement des utils obsolètes
 
-/*
-Get the actual size of a resource downloaded by the browser (e.g. an image) in bytes.
-This is supported in recent versions of all major browsers, with some caveats.
-See https://developer.mozilla.org/en-US/docs/Web/API/PerformanceResourceTiming/encodedBodySize
-*/
-export function getResourceSize(url) {
-    const entry = window?.performance?.getEntriesByName(url)?.[0];
-    if (entry) {
-        const size = entry?.encodedBodySize;
-        return size || undefined;
-    } else {
-        return undefined;
-    }
+export const uploadDisabled = true;
+
+export function formatCurrency(amount, currency = 'EUR') {
+    return new Intl.NumberFormat('fr-FR', {
+        style: 'currency',
+        currency
+    }).format(amount);
 }
 
-// Note: this only works on the server side
-export function getNetlifyContext() {
-    return process.env.CONTEXT;
+export function formatDate(date) {
+    return new Intl.DateTimeFormat('fr-FR').format(new Date(date));
 }
 
-export function randomInt(min, max) {
-    return Math.floor(Math.random() * (max - min + 1) + min);
+export function cn(...classes) {
+    return classes.filter(Boolean).join(' ');
 }
-
-const uniqueNamesConfig = {
-    dictionaries: [adjectives, animals],
-    separator: '-',
-    length: 2
-};
-
-export function uniqueName() {
-    return uniqueNamesGenerator(uniqueNamesConfig) + "-" + randomInt(100, 999);
-}
-
-export const uploadDisabled = process.env.NEXT_PUBLIC_DISABLE_UPLOADS?.toLowerCase() === "true";
