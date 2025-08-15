@@ -1,10 +1,10 @@
-import DashboardPreview from '../../components/dashboard-preview';
+import Link from 'next/link';
 
 const demoFeatures = [
     {
         title: 'Dashboard Temps Réel',
         description: 'Visualisation live des KPIs SAP avec prédictions ML',
-        demo: 'Interactive dashboard ci-dessous'
+        demo: 'Interface responsive et moderne'
     },
     {
         title: 'Prédictions PUP',
@@ -14,12 +14,12 @@ const demoFeatures = [
     {
         title: 'Alertes Intelligentes',
         description: 'n8n workflows avec notifications smart',
-        demo: 'Démo d\'alerte en temps réel'
+        demo: 'Notifications en temps réel'
     },
     {
         title: 'Claude Copilot',
         description: 'Assistant IA conversationnel intégré',
-        demo: 'Testez les questions/réponses'
+        demo: 'Questions/réponses intelligentes'
     }
 ];
 
@@ -39,10 +39,10 @@ export default function DemoPage() {
                 <div className="max-w-7xl mx-auto px-6 lg:px-8">
                     <div className="text-center">
                         <h1 className="text-4xl lg:text-5xl font-bold mb-6">
-                            🚀 Démo Live SAPience ML Platform
+                            🚀 Démo SAPience ML Platform
                         </h1>
                         <p className="text-xl text-blue-100 max-w-3xl mx-auto mb-8">
-                            Explorez toutes les fonctionnalités de SAPience avec des données SAP simulées
+                            Découvrez la puissance de SAPience avec l'IA pour transformer vos processus SAP
                         </p>
                         <div className="inline-flex items-center space-x-2 px-4 py-2 bg-green-500/20 rounded-full text-green-200 text-sm font-medium">
                             <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
@@ -57,10 +57,10 @@ export default function DemoPage() {
                 <div className="max-w-7xl mx-auto px-6 lg:px-8">
                     <div className="text-center mb-12">
                         <h2 className="text-3xl font-bold text-slate-900 mb-4">
-                            Fonctionnalités Démontrables
+                            Fonctionnalités SAPience
                         </h2>
                         <p className="text-xl text-slate-600">
-                            Testez chaque module de la plateforme SAPience
+                            Explorez les modules de la plateforme IA
                         </p>
                     </div>
                     
@@ -76,19 +76,36 @@ export default function DemoPage() {
                 </div>
             </section>
 
-            {/* Live Dashboard Demo */}
+            {/* Dashboard Preview Section */}
             <section className="py-16">
                 <div className="max-w-7xl mx-auto px-6 lg:px-8">
                     <div className="text-center mb-12">
                         <h2 className="text-3xl font-bold text-slate-900 mb-4">
-                            📊 Dashboard Interactif
+                            📊 Interface SAPience
                         </h2>
                         <p className="text-xl text-slate-600 mb-8">
-                            Naviguez dans les différents modules : Vue d'ensemble, Prédictions, Anomalies, What-If
+                            Interface moderne et intuitive pour vos analyses SAP
                         </p>
                     </div>
                     
-                    <DashboardPreview />
+                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-8 border border-blue-200">
+                        <div className="text-center">
+                            <div className="text-6xl mb-4">🎯</div>
+                            <h3 className="text-2xl font-bold text-slate-900 mb-4">
+                                Dashboard SAPience ML
+                            </h3>
+                            <p className="text-slate-600 mb-6">
+                                Interface responsive avec visualisations temps réel, prédictions ML, 
+                                et intégration Claude Copilot pour vos analyses SAP.
+                            </p>
+                            <div className="flex flex-wrap justify-center gap-4 text-sm">
+                                <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full">Vue d'ensemble</span>
+                                <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full">Prédictions</span>
+                                <span className="px-3 py-1 bg-orange-100 text-orange-800 rounded-full">Anomalies</span>
+                                <span className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full">What-If</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
 
@@ -96,15 +113,19 @@ export default function DemoPage() {
             <section className="py-16 bg-blue-50">
                 <div className="max-w-4xl mx-auto px-6 lg:px-8 text-center">
                     <h2 className="text-3xl font-bold text-slate-900 mb-6">
-                        Prêt à Implémenter SAPience ?
+                        Prêt à Transformer Votre SAP ?
                     </h2>
                     <p className="text-xl text-slate-600 mb-8">
-                        Cette démo vous donne un aperçu de la puissance de SAPience. Contactez-nous pour une démonstration personnalisée avec vos données SAP.
+                        SAPience ML Platform révolutionne vos processus Finance/CO avec l'intelligence artificielle.
+                        Contactez-nous pour une démonstration personnalisée.
                     </p>
                     <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                        <button className="px-8 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors">
-                            📞 Planifier une Démo Personnalisée
-                        </button>
+                        <Link 
+                            href="/"
+                            className="px-8 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+                        >
+                            ← Retour à l'accueil
+                        </Link>
                         <button className="px-8 py-3 border border-blue-600 text-blue-600 rounded-lg font-semibold hover:bg-blue-50 transition-colors">
                             💬 Parler à un Expert
                         </button>
