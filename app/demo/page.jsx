@@ -1,5 +1,4 @@
-import { DashboardPreview } from 'components/dashboard-preview';
-import { Card } from 'components/card';
+import DashboardPreview from '../../components/dashboard-preview';
 
 const demoFeatures = [
     {
@@ -23,6 +22,14 @@ const demoFeatures = [
         demo: 'Testez les questions/réponses'
     }
 ];
+
+function Card({ children, className }) {
+    return (
+        <div className={`bg-white rounded-lg border border-slate-200 ${className}`}>
+            {children}
+        </div>
+    );
+}
 
 export default function DemoPage() {
     return (
