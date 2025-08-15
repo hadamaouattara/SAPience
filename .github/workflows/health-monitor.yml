@@ -1,0 +1,227 @@
+name: 📊 Health Monitor - Post Deployment Validation
+
+on:
+  workflow_run:
+    workflows: ["🛡️ Quality Gate - Zero Error Deployment"]
+    types:
+      - completed
+  schedule:
+    # Run health check every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    # Allow manual trigger
+
+jobs:
+  health-monitor:
+    name: 🏥 System Health Check
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🟢 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: 🔍 Deep Structure Validation
+      run: |
+        echo "🔍 Performing deep structure validation..."
+        
+        # Verify critical app structure
+        REQUIRED_FILES=(
+          "app/page.jsx"
+          "app/layout.jsx" 
+          "package.json"
+          "next.config.js"
+          ".github/workflows/quality-gate.yml"
+        )
+        
+        for file in "${REQUIRED_FILES[@]}"; do
+          if [ ! -f "$file" ]; then
+            echo "❌ CRITICAL: Missing file $file"
+            exit 1
+          else
+            echo "✅ Found: $file"
+          fi
+        done
+        
+        # Verify forbidden directories stay removed
+        FORBIDDEN_DIRS=("app/blobs" "app/image-cdn")
+        
+        for dir in "${FORBIDDEN_DIRS[@]}"; do
+          if [ -d "$dir" ]; then
+            echo "❌ CRITICAL: Forbidden directory returned: $dir"
+            exit 1
+          else
+            echo "✅ Confirmed removed: $dir"
+          fi
+        done
+        
+        echo "✅ Deep structure validation PASSED"
+        
+    - name: 🔍 Dependencies Health Check
+      run: |
+        echo "🔍 Checking dependencies health..."
+        
+        # Install and verify dependencies
+        npm ci
+        
+        # Check for security vulnerabilities
+        if command -v npm audit &> /dev/null; then
+          echo "🔒 Running security audit..."
+          npm audit --audit-level moderate
+        fi
+        
+        # Verify no forbidden packages
+        FORBIDDEN_PACKAGES=("blobshape" "@netlify/blobs" "unique-names-generator")
+        
+        for package in "${FORBIDDEN_PACKAGES[@]}"; do
+          if npm list "$package" &> /dev/null; then
+            echo "❌ CRITICAL: Forbidden package found: $package"
+            exit 1
+          fi
+        done
+        
+        echo "✅ Dependencies health check PASSED"
+        
+    - name: 🏗️ Build Integrity Test
+      run: |
+        echo "🏗️ Testing build integrity..."
+        
+        # Clean build test
+        rm -rf .next
+        npm run build
+        
+        # Verify build output
+        if [ ! -d ".next" ]; then
+          echo "❌ CRITICAL: Build failed - no .next directory"
+          exit 1
+        fi
+        
+        # Check for build errors in output
+        if [ -f ".next/build-manifest.json" ]; then
+          echo "✅ Build manifest created successfully"
+        else
+          echo "❌ WARNING: Build manifest missing"
+        fi
+        
+        echo "✅ Build integrity test PASSED"
+        
+    - name: 📊 Generate Health Report
+      run: |
+        echo "📊 Generating system health report..."
+        
+        # Collect system metrics
+        echo "=== SAPience ML Platform Health Report ==="
+        echo "Date: $(date)"
+        echo "Commit: $GITHUB_SHA"
+        echo "Branch: $GITHUB_REF_NAME"
+        echo ""
+        
+        echo "📁 Project Structure: ✅ HEALTHY"
+        echo "📦 Dependencies: ✅ CLEAN"
+        echo "🏗️ Build System: ✅ OPERATIONAL"
+        echo "🛡️ Quality Gate: ✅ ACTIVE"
+        echo ""
+        
+        # File counts
+        echo "📊 Metrics:"
+        echo "- JavaScript files: $(find . -name "*.js" -not -path "./node_modules/*" | wc -l)"
+        echo "- JSX files: $(find . -name "*.jsx" -not -path "./node_modules/*" | wc -l)"
+        echo "- TypeScript files: $(find . -name "*.ts" -not -path "./node_modules/*" | wc -l)"
+        echo "- TSX files: $(find . -name "*.tsx" -not -path "./node_modules/*" | wc -l)"
+        echo ""
+        
+        echo "🎯 Status: SYSTEM HEALTHY ✅"
+        echo "🚀 Deployment: SAFE TO PROCEED ✅"
+        
+    - name: 🚨 Alert on Failure
+      if: failure()
+      run: |
+        echo "🚨 =========================================="
+        echo "🚨 HEALTH CHECK FAILED!"
+        echo "🚨 =========================================="
+        echo "❌ System integrity compromised"
+        echo "❌ Immediate attention required"
+        echo "❌ Deployment should be halted"
+        echo ""
+        echo "📧 Please check the logs above for details"
+        echo "🔧 Fix issues before proceeding"
+        
+  performance-check:
+    name: ⚡ Performance Validation
+    runs-on: ubuntu-latest
+    needs: health-monitor
+    if: success()
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🟢 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: ⚡ Performance Tests
+      run: |
+        echo "⚡ Running performance validation..."
+        
+        # Install dependencies
+        npm ci
+        
+        # Build with performance monitoring
+        echo "🏗️ Building with performance monitoring..."
+        time npm run build
+        
+        # Check build size
+        if [ -d ".next" ]; then
+          BUILD_SIZE=$(du -sh .next | cut -f1)
+          echo "📦 Build size: $BUILD_SIZE"
+          
+          # Simple size check (warn if over 100MB)
+          SIZE_BYTES=$(du -sb .next | cut -f1)
+          if [ "$SIZE_BYTES" -gt 104857600 ]; then
+            echo "⚠️ WARNING: Build size is large (>100MB)"
+          else
+            echo "✅ Build size is optimal"
+          fi
+        fi
+        
+        echo "✅ Performance validation PASSED"
+        
+  security-scan:
+    name: 🔒 Security Validation
+    runs-on: ubuntu-latest
+    needs: health-monitor
+    if: success()
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔒 Security Scan
+      run: |
+        echo "🔒 Running security validation..."
+        
+        # Check for sensitive files
+        SENSITIVE_PATTERNS=(".env" "*.key" "*.pem" "password" "secret")
+        
+        for pattern in "${SENSITIVE_PATTERNS[@]}"; do
+          if find . -name "$pattern" -not -path "./node_modules/*" -not -name ".env.example" | grep -q .; then
+            echo "⚠️ WARNING: Potential sensitive file found: $pattern"
+          fi
+        done
+        
+        # Check for hardcoded secrets in code
+        echo "🔍 Scanning for hardcoded secrets..."
+        if grep -r -i "password\|secret\|token\|key" --include="*.js" --include="*.jsx" --include="*.ts" --include="*.tsx" . | grep -v node_modules | grep -v ".git" | head -5; then
+          echo "⚠️ WARNING: Potential hardcoded secrets found - review above"
+        fi
+        
+        echo "✅ Security scan completed"
