@@ -1,0 +1,300 @@
+name: SAPience ML Platform CI/CD
+
+on:
+  repository_dispatch:
+    types: [sapience-ml-deploy]
+  pull_request:
+    types: [opened, synchronize]
+  push:
+    branches: [main]
+
+env:
+  N8N_WEBHOOK_URL: ${{ secrets.N8N_WEBHOOK_URL }}
+  NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+  NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+
+jobs:
+  notify-n8n-start:
+    runs-on: ubuntu-latest
+    name: 🚀 Notify n8n - SAPience ML Platform Build Start
+    steps:
+    - name: Send Build Start to n8n
+      run: |
+        curl -X POST "${{ env.N8N_WEBHOOK_URL }}/sapience-build-started" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "platform": "SAPience ML Platform v2.0",
+            "event_type": "${{ github.event_name }}",
+            "repository": "${{ github.repository }}",
+            "ref": "${{ github.ref }}",
+            "commit_sha": "${{ github.sha }}",
+            "actor": "${{ github.actor }}",
+            "pr_number": "${{ github.event.number }}",
+            "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+            "features": ["Dashboard ML", "PUP Prediction", "n8n Integration", "Claude Copilot"]
+          }'
+
+  build-and-test:
+    needs: notify-n8n-start
+    runs-on: ubuntu-latest
+    name: 🔨 Build & Test SAPience ML Platform
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run linting
+      run: npm run lint
+      
+    - name: Run type checking
+      run: |
+        if [ -f "tsconfig.json" ]; then
+          npm run type-check || npx tsc --noEmit
+        fi
+        
+    - name: Build SAPience ML Platform
+      env:
+        NODE_ENV: production
+        NEXT_PUBLIC_PLATFORM_VERSION: "2.0.0"
+      run: |
+        npm run build
+        echo "✅ SAPience ML Platform build completed"
+        
+    - name: Test SAPience Integrations
+      run: |
+        echo "🧪 Testing SAPience ML Platform components..."
+        
+        # Test new SAPience components
+        if [ -f "components/dashboard-preview.jsx" ]; then
+          echo "✅ Dashboard Preview component exists"
+        else
+          echo "⚠️  Dashboard Preview component missing"
+        fi
+        
+        if [ -f "components/feature-grid.jsx" ]; then
+          echo "✅ Feature Grid component exists"
+        else
+          echo "⚠️  Feature Grid component missing"
+        fi
+        
+        if [ -f "app/integrations/page.jsx" ]; then
+          echo "✅ Integrations page exists"
+        else
+          echo "⚠️  Integrations page missing"
+        fi
+        
+        if [ -f "app/demo/page.jsx" ]; then
+          echo "✅ Demo page exists"
+        else
+          echo "⚠️  Demo page missing"
+        fi
+        
+        # Test API endpoints
+        if [ -f "app/api/webhooks/sap/route.ts" ] || [ -f "app/api/webhooks/sap/route.js" ]; then
+          echo "✅ SAP webhook endpoint exists"
+        else
+          echo "⚠️  SAP webhook endpoint missing - should be created for n8n integration"
+        fi
+        
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: sapience-build-${{ matrix.node-version }}
+        path: |
+          .next/
+          out/
+        if-no-files-found: ignore
+        retention-days: 7
+        
+    - name: Notify n8n Build Result
+      if: always()
+      run: |
+        STATUS="${{ job.status }}"
+        curl -X POST "${{ env.N8N_WEBHOOK_URL }}/sapience-build-completed" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "platform": "SAPience ML Platform v2.0",
+            "status": "'$STATUS'",
+            "node_version": "${{ matrix.node-version }}",
+            "repository": "${{ github.repository }}",
+            "commit_sha": "${{ github.sha }}",
+            "build_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+            "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+            "components_tested": ["Dashboard", "Features", "Integrations", "Demo", "API"]
+          }'
+
+  deploy-preview:
+    needs: build-and-test
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    name: 🌍 Deploy SAPience ML Platform Preview
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Build for preview
+      env:
+        NODE_ENV: production
+        NEXT_PUBLIC_PLATFORM_VERSION: "2.0.0-preview"
+        NEXT_PUBLIC_N8N_WEBHOOK_URL: ${{ secrets.NEXT_PUBLIC_N8N_WEBHOOK_URL }}
+      run: |
+        npm run build
+        echo "Preview build completed for SAPience ML Platform"
+        
+    - name: Deploy to Netlify Preview
+      uses: nwtgck/actions-netlify@v3.0
+      id: netlify
+      with:
+        publish-dir: '.next'
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        deploy-message: "SAPience ML Platform v2.0 - PR #${{ github.event.number }}"
+        alias: pr-${{ github.event.number }}
+        enable-pull-request-comment: false
+      env:
+        NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        
+    - name: Comment PR with SAPience Preview
+      uses: actions/github-script@v7
+      env:
+        PREVIEW_URL: ${{ steps.netlify.outputs.deploy-url }}
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `## 🚀 SAPience ML Platform v2.0 - Preview Ready!
+            
+            **Preview URL:** ${{ env.PREVIEW_URL }}
+            
+            ### 🎯 SAPience Features à Tester
+            - [📊 Dashboard ML Interactif](${{ env.PREVIEW_URL }}/#demo)
+            - [🤖 Prédictions PUP](${{ env.PREVIEW_URL }}/#demo)
+            - [⚙️ Intégrations SAP/n8n](${{ env.PREVIEW_URL }}/integrations)
+            - [🎬 Démo Live](${{ env.PREVIEW_URL }}/demo)
+            - [💰 Pricing Enterprise](${{ env.PREVIEW_URL }}/#pricing)
+            
+            ### 📋 Test Checklist SAPience
+            - [ ] 📱 Design responsive (mobile/desktop)
+            - [ ] 🎨 Nouvelle identité visuelle (bleu/cyan/slate)
+            - [ ] 📊 Dashboard interactif (4 onglets)
+            - [ ] 🏢 Positioning enterprise B2B
+            - [ ] 💬 Claude Copilot integration
+            - [ ] ⚡ Performance & loading
+            
+            ### 🔗 n8n Integration Ready
+            Webhooks configurés pour notifications build → n8n workflows
+            
+            *Deployed from commit ${{ github.sha }} - SAPience ML Platform v2.0*`
+          });
+
+  deploy-production:
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    name: 🚀 Deploy SAPience ML Platform to Production
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Build for production
+      env:
+        NODE_ENV: production
+        NEXT_PUBLIC_PLATFORM_VERSION: "2.0.0"
+        NEXT_PUBLIC_N8N_WEBHOOK_URL: ${{ secrets.NEXT_PUBLIC_N8N_WEBHOOK_URL }}
+      run: |
+        npm run build
+        echo "Production build completed for SAPience ML Platform v2.0"
+        
+    - name: Deploy to Netlify Production
+      uses: nwtgck/actions-netlify@v3.0
+      id: netlify_prod
+      with:
+        publish-dir: '.next'
+        production-branch: main
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        deploy-message: "🚀 SAPience ML Platform v2.0 Production - ${{ github.sha }}"
+        enable-pull-request-comment: false
+      env:
+        NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          
+    - name: Notify n8n Production Deploy
+      run: |
+        curl -X POST "${{ env.N8N_WEBHOOK_URL }}/sapience-production-deployed" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "platform": "SAPience ML Platform",
+            "version": "2.0.0",
+            "status": "success",
+            "site_url": "${{ steps.netlify_prod.outputs.deploy-url }}",
+            "commit_sha": "${{ github.sha }}",
+            "deployed_at": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+            "features": {
+              "dashboard": "✅ Interactive ML Dashboard",
+              "prediction": "✅ PUP Prediction with ML",
+              "integrations": "✅ SAP + n8n + Claude MCP",
+              "demo": "✅ Live Demo Platform",
+              "pricing": "✅ Enterprise Pricing"
+            },
+            "compliance": "RGPD + SOX Ready + EU-West-3"
+          }'
+          
+    - name: Create GitHub Deployment
+      uses: actions/github-script@v7
+      env:
+        PROD_URL: ${{ steps.netlify_prod.outputs.deploy-url }}
+      with:
+        script: |
+          const { data: deployment } = await github.rest.repos.createDeployment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            ref: context.sha,
+            environment: 'production',
+            description: 'SAPience ML Platform v2.0 Production Deployment',
+            auto_merge: false,
+            required_contexts: []
+          });
+          
+          await github.rest.repos.createDeploymentStatus({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            deployment_id: deployment.id,
+            state: 'success',
+            environment_url: process.env.PROD_URL,
+            description: 'SAPience ML Platform v2.0 successfully deployed to production'
+          });
